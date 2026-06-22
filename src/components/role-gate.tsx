@@ -34,6 +34,5 @@ export function RoleGate({ roles, children }: RoleGateProps) {
 
 export function routeForRole(role: Role) {
   if (role === "ADMIN") return "/(admin)/manage";
-  if (role === "TEACHER") return "/(teacher)/point";
   return "/(user)";
 }
