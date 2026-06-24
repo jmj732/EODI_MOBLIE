@@ -1,23 +1,16 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useQuery } from "@tanstack/react-query";
 import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Image,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, FlatList, Image, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { devLogin, exchangeOneTimeToken, getMobileBsmStartUrl } from "@/api/auth";
 import { searchItems } from "@/api/items";
 import { AppButton } from "@/components/app-button";
+import { FeedbackBanner, type FeedbackMessage } from "@/components/feedback-banner";
 import { routeForRole } from "@/components/role-gate";
 import { authCallbackUrl, isDevApp } from "@/config/env";
 import { useAuthStore } from "@/stores/auth-store";
@@ -26,15 +19,21 @@ import type { Role } from "@/types/auth";
 import type { ItemSummary } from "@/types/item";
 import { normalizeImageUrl } from "@/utils/image";
 
+const GUIDE_STEPS = [
+  { icon: "search-outline", title: "검색", body: "등록된 분실물을 이름, 종류, 장소로 찾습니다." },
+  { icon: "calendar-outline", title: "방문일 선택", body: "내 물건이면 방문 예정일을 선택해 회수 요청을 보냅니다." },
+  { icon: "checkmark-circle-outline", title: "승인 후 수령", body: "승인 상태를 확인하고 지정 장소에서 수령합니다." },
+] satisfies { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[];
+
 export default function LandingScreen() {
   const { status, user, setSession } = useAuthStore();
   const [loading, setLoading] = useState<Role | "bsm" | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
 
-  const { data: disposalData, isLoading: disposalLoading } = useQuery({
-    queryKey: ["items", "disposal", "public"],
-    queryFn: () => searchItems({ status: ["TO_BE_DISCARDED"], size: 8, sort: "LATEST" }),
+  const expiring = useQuery({
+    queryKey: ["items", "landing", "to-be-discarded"],
+    queryFn: () => searchItems({ status: ["TO_BE_DISCARDED"], page: 1, size: 8, sort: "LATEST" }),
   });
-  const disposalItems = disposalData?.items ?? [];
 
   useEffect(() => {
     if (status === "authenticated" && user) {
@@ -56,7 +55,7 @@ export default function LandingScreen() {
       await setSession(session);
       router.replace(routeForRole(session.user.role));
     } catch (error) {
-      Alert.alert("로그인 실패", error instanceof Error ? error.message : "다시 시도해주세요.");
+      setFeedback({ tone: "error", title: "로그인 실패", message: error instanceof Error ? error.message : "다시 시도해주세요." });
     } finally {
       setLoading(null);
     }
@@ -69,7 +68,7 @@ export default function LandingScreen() {
       await setSession(session);
       router.replace(routeForRole(session.user.role));
     } catch (error) {
-      Alert.alert("개발 로그인 실패", error instanceof Error ? error.message : "dev 서버를 확인해주세요.");
+      setFeedback({ tone: "error", title: "개발 로그인 실패", message: error instanceof Error ? error.message : "dev 서버를 확인해주세요." });
     } finally {
       setLoading(null);
     }
@@ -85,100 +84,97 @@ export default function LandingScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.appBg }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 36 }}>
-        <View style={{ paddingHorizontal: 20, paddingTop: 20, gap: 20 }}>
-          <LandingHero onFind={() => router.push("/browse")} onLogin={handleBsmLogin} loginLoading={loading === "bsm"} />
+      <ScrollView contentContainerStyle={{ paddingBottom: 34 }}>
+        <Hero onBrowse={() => router.push("/browse")} onLogin={handleBsmLogin} loginLoading={loading === "bsm"} />
 
+        <View style={{ padding: 16, gap: 16 }}>
+          <FeedbackBanner feedback={feedback} onDismiss={() => setFeedback(null)} />
           {isDevApp ? <DevLoginPanel loading={loading} onLogin={handleDevLogin} /> : null}
 
-          <SectionHeader title="폐기 직전 분실물" action="전체 보기" onPress={() => router.push("/browse")} />
-          <DisposalPreview items={disposalItems} loading={disposalLoading} />
-
-          <View style={{ gap: 12 }}>
-            <Text style={{ ...typography.h2, color: colors.textMain }}>분실물 되찾기</Text>
-            <StepRow index={1} title="검색" description="물품명, 카테고리로 분실물을 찾습니다." />
-            <StepRow index={2} title="회수 요청" description="상세 화면에서 방문 예정일을 선택합니다." />
-            <StepRow index={3} title="승인 후 수령" description="생활부 승인 후 지정 날짜에 방문합니다." />
+          <View style={{ gap: 10 }}>
+            <SectionHeader title="폐기 예정 물품" action="둘러보기" onPress={() => router.push("/browse")} />
+            <ExpiringPreview items={expiring.data?.content ?? []} loading={expiring.isLoading} />
           </View>
 
-          <ContactPanel />
+          <View style={{ gap: 10 }}>
+            <SectionHeader title="이용 흐름" />
+            {GUIDE_STEPS.map((step) => (
+              <GuideRow key={step.title} icon={step.icon} title={step.title} body={step.body} />
+            ))}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function LandingHero({
-  onFind,
+function Hero({
+  onBrowse,
   onLogin,
   loginLoading,
 }: {
-  onFind: () => void;
+  onBrowse: () => void;
   onLogin: () => void;
   loginLoading: boolean;
 }) {
   return (
     <View
       style={{
-        backgroundColor: colors.cardBg,
-        borderRadius: 24,
-        padding: 22,
-        gap: 18,
-        borderWidth: 1,
-        borderColor: colors.border,
-        ...shadow,
+        minHeight: 360,
+        paddingHorizontal: 20,
+        paddingTop: 26,
+        paddingBottom: 22,
+        justifyContent: "space-between",
+        backgroundColor: colors.primaryDark,
       }}
     >
-      <View style={{ gap: 8 }}>
-        <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primary }}>EODI</Text>
-        <Text style={{ fontSize: 30, lineHeight: 37, fontWeight: "800", color: colors.textMain }}>
-          분실물을 찾고{"\n"}회수까지 한 번에
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <Image source={require("../assets/icon.png")} style={{ width: 34, height: 34, borderRadius: 8 }} />
+          <Text style={{ fontSize: 18, fontWeight: "900", color: "#FFFFFF" }}>어디</Text>
+        </View>
+        <Pressable
+          onPress={onBrowse}
+          style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.chip, backgroundColor: "rgba(255,255,255,0.14)" }}
+        >
+          <Text style={{ fontSize: 13, fontWeight: "800", color: "#FFFFFF" }}>둘러보기</Text>
+        </Pressable>
+      </View>
+
+      <View style={{ gap: 14 }}>
+        <Text style={{ fontSize: 34, lineHeight: 42, fontWeight: "900", color: "#FFFFFF" }}>
+          학교 분실물,{"\n"}찾고 신청까지.
         </Text>
-        <Text style={{ fontSize: 14, lineHeight: 21, color: colors.textSub }}>
-          접수된 분실물을 확인하고, 본인 물건은 회수 요청을 보낼 수 있습니다.
+        <Text style={{ fontSize: 15, lineHeight: 23, color: "#DBEAFE" }}>
+          등록된 물품을 바로 검색하고 본인 물건은 앱에서 회수 요청을 보낼 수 있습니다.
         </Text>
       </View>
 
-      <View style={{ flexDirection: "row", gap: 10 }}>
-        <View style={{ flex: 1 }}>
-          <AppButton title="분실물 찾기" variant="secondary" onPress={onFind} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <AppButton title="BSM 로그인" onPress={onLogin} loading={loginLoading} />
-        </View>
+      <View style={{ gap: 10 }}>
+        <AppButton title="BSM으로 시작" icon="log-in-outline" onPress={onLogin} loading={loginLoading} />
+        <AppButton title="로그인 없이 분실물 보기" icon="search-outline" variant="secondary" onPress={onBrowse} />
       </View>
     </View>
   );
 }
 
-function DevLoginPanel({
-  loading,
-  onLogin,
-}: {
-  loading: Role | "bsm" | null;
-  onLogin: (role: Role) => void;
-}) {
+function DevLoginPanel({ loading, onLogin }: { loading: Role | "bsm" | null; onLogin: (role: Role) => void }) {
   return (
     <View
       style={{
-        backgroundColor: "#FFF7ED",
+        backgroundColor: colors.warningBg,
         borderRadius: radius.card,
         padding: 14,
         gap: 10,
         borderWidth: 1,
-        borderColor: "#FED7AA",
+        borderColor: "#FDE68A",
       }}
     >
-      <Text style={{ fontSize: 12, fontWeight: "700", color: "#9A3412" }}>개발 로그인</Text>
+      <Text style={{ fontSize: 13, fontWeight: "900", color: colors.warning }}>개발 로그인</Text>
       <View style={{ flexDirection: "row", gap: 8 }}>
         {(["USER", "ADMIN"] as Role[]).map((role) => (
           <View key={role} style={{ flex: 1 }}>
-            <AppButton
-              title={role}
-              variant="secondary"
-              onPress={() => onLogin(role)}
-              loading={loading === role}
-            />
+            <AppButton title={role} variant="secondary" onPress={() => onLogin(role)} loading={loading === role} />
           </View>
         ))}
       </View>
@@ -186,31 +182,23 @@ function DevLoginPanel({
   );
 }
 
-function SectionHeader({
-  title,
-  action,
-  onPress,
-}: {
-  title: string;
-  action?: string;
-  onPress?: () => void;
-}) {
+function SectionHeader({ title, action, onPress }: { title: string; action?: string; onPress?: () => void }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
       <Text style={{ ...typography.h2, color: colors.textMain }}>{title}</Text>
       {action && onPress ? (
         <Pressable onPress={onPress} hitSlop={8}>
-          <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primary }}>{action}</Text>
+          <Text style={{ fontSize: 13, fontWeight: "900", color: colors.primary }}>{action}</Text>
         </Pressable>
       ) : null}
     </View>
   );
 }
 
-function DisposalPreview({ items, loading }: { items: ItemSummary[]; loading: boolean }) {
+function ExpiringPreview({ items, loading }: { items: ItemSummary[]; loading: boolean }) {
   if (loading) {
     return (
-      <View style={{ height: 132, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ height: 142, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color={colors.primary} />
       </View>
     );
@@ -218,15 +206,7 @@ function DisposalPreview({ items, loading }: { items: ItemSummary[]; loading: bo
 
   if (items.length === 0) {
     return (
-      <View
-        style={{
-          backgroundColor: colors.cardBg,
-          borderRadius: radius.card,
-          padding: 18,
-          borderWidth: 1,
-          borderColor: colors.border,
-        }}
-      >
+      <View style={{ padding: 18, borderRadius: radius.card, backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.border }}>
         <Text style={{ fontSize: 14, color: colors.textSub }}>폐기 예정인 분실물이 없습니다.</Text>
       </View>
     );
@@ -238,44 +218,37 @@ function DisposalPreview({ items, loading }: { items: ItemSummary[]; loading: bo
       data={items}
       keyExtractor={(item) => String(item.id)}
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 12, paddingRight: 20 }}
-      renderItem={({ item }) => <DisposalCard item={item} />}
+      contentContainerStyle={{ gap: 12, paddingRight: 16 }}
+      renderItem={({ item }) => <ExpiringCard item={item} />}
     />
   );
 }
 
-function DisposalCard({ item }: { item: ItemSummary }) {
+function ExpiringCard({ item }: { item: ItemSummary }) {
   const imageUrl = normalizeImageUrl(item.image);
 
   return (
     <Pressable
       onPress={() => router.push(`/item/${item.id}`)}
       style={{
-        width: 158,
+        width: 166,
         backgroundColor: colors.cardBg,
         borderRadius: radius.card,
         overflow: "hidden",
         borderWidth: 1,
         borderColor: colors.border,
+        ...shadow,
       }}
     >
       {imageUrl ? (
-        <Image source={{ uri: imageUrl }} style={{ width: "100%", height: 92 }} resizeMode="cover" />
+        <Image source={{ uri: imageUrl }} style={{ width: "100%", height: 94 }} resizeMode="cover" />
       ) : (
-        <View
-          style={{
-            width: "100%",
-            height: 92,
-            backgroundColor: "#E5E7EB",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Text style={{ fontSize: 12, color: colors.textMuted }}>이미지 없음</Text>
+        <View style={{ height: 94, alignItems: "center", justifyContent: "center", backgroundColor: "#EEF2F7" }}>
+          <Ionicons name="image-outline" color={colors.textMuted} size={24} />
         </View>
       )}
-      <View style={{ padding: 10, gap: 4 }}>
-        <Text style={{ fontSize: 14, fontWeight: "700", color: colors.textMain }} numberOfLines={1}>
+      <View style={{ padding: 11, gap: 4 }}>
+        <Text style={{ fontSize: 14, fontWeight: "900", color: colors.textMain }} numberOfLines={1}>
           {item.name}
         </Text>
         <Text style={{ fontSize: 12, color: colors.textSub }} numberOfLines={1}>
@@ -286,54 +259,36 @@ function DisposalCard({ item }: { item: ItemSummary }) {
   );
 }
 
-function StepRow({ index, title, description }: { index: number; title: string; description: string }) {
+function GuideRow({ icon, title, body }: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }) {
   return (
     <View
       style={{
         flexDirection: "row",
         gap: 12,
+        alignItems: "flex-start",
         backgroundColor: colors.cardBg,
         borderRadius: radius.card,
-        padding: 14,
+        padding: 15,
         borderWidth: 1,
         borderColor: colors.border,
       }}
     >
       <View
         style={{
-          width: 28,
-          height: 28,
-          borderRadius: 14,
-          backgroundColor: colors.primaryBg,
+          width: 36,
+          height: 36,
+          borderRadius: 12,
+          backgroundColor: colors.accentBg,
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Text style={{ fontSize: 13, fontWeight: "800", color: colors.primary }}>{index}</Text>
+        <Ionicons name={icon} color={colors.accent} size={20} />
       </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={{ fontSize: 15, fontWeight: "700", color: colors.textMain }}>{title}</Text>
-        <Text style={{ fontSize: 13, lineHeight: 18, color: colors.textSub }}>{description}</Text>
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={{ fontSize: 15, fontWeight: "900", color: colors.textMain }}>{title}</Text>
+        <Text style={{ fontSize: 13, lineHeight: 19, color: colors.textSub }}>{body}</Text>
       </View>
-    </View>
-  );
-}
-
-function ContactPanel() {
-  return (
-    <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 18, gap: 6 }}>
-      <FooterRow label="생활부" value="3-1 박가은, 2-1 김가은" />
-      <FooterRow label="관리자" value="3-1 이하은" />
-      <FooterRow label="학생기숙사부" value="진예빈, 송지훈 선생님" />
-    </View>
-  );
-}
-
-function FooterRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ flexDirection: "row", gap: 8 }}>
-      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSub, width: 72 }}>{label}</Text>
-      <Text style={{ fontSize: 12, color: colors.textMuted, flex: 1 }}>{value}</Text>
     </View>
   );
 }

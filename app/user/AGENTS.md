@@ -1,7 +1,7 @@
 <!-- Parent: ../AGENTS.md -->
 <!-- Generated: 2026-06-11 | Updated: 2026-06-11 -->
 
-# app/(user)/
+# app/user/
 
 ## Purpose
 USER 역할 탭 그룹. 분실물 검색/회수 요청, 내 요청 조회/취소 담당.
