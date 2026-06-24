@@ -1,10 +1,11 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { router, Stack, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { createElement, useState } from "react";
+import type { CSSProperties } from "react";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Modal,
   Platform,
@@ -13,22 +14,28 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { claimKeys, createClaim } from "@/api/claims";
-import { getItemDetail, itemKeys } from "@/api/items";
+import { claimKeys, createClaim, getMyClaims } from "@/api/claims";
+import { getItemDetail, itemKeys, searchItems } from "@/api/items";
 import { AppButton } from "@/components/app-button";
+import { FeedbackBanner, type FeedbackMessage } from "@/components/feedback-banner";
 import { useAuthStore } from "@/stores/auth-store";
 import { colors, radius, shadow, typography } from "@/theme";
+import type { ItemStatus } from "@/types/item";
 import { normalizeImageUrl } from "@/utils/image";
 
 
 export default function ItemDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const itemId = parseInt(id, 10);
   const queryClient = useQueryClient();
   const { user } = useAuthStore();
   const [showClaim, setShowClaim] = useState(false);
   const [visitDate, setVisitDate] = useState(new Date());
+  const [claimSubmitted, setClaimSubmitted] = useState(false);
+  const [feedback, setFeedback] = useState<FeedbackMessage | null>(null);
   const visitDateString = visitDate.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 
   const { data: item, isLoading } = useQuery({
@@ -36,39 +43,65 @@ export default function ItemDetailScreen() {
     queryFn: () => getItemDetail(itemId),
   });
 
+  const statusFallback = useQuery({
+    queryKey: ["items", "detail-status", itemId] as const,
+    queryFn: () => searchItems({ page: 1, size: 200, sort: "LATEST" }),
+    enabled: !!item,
+  });
+
+  const myClaims = useQuery({
+    queryKey: claimKeys.my(1),
+    queryFn: () => getMyClaims(1, 100),
+    enabled: user?.role === "USER",
+  });
+
   const claim = useMutation({
     mutationFn: () => createClaim(itemId, visitDateString),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: claimKeys.my() });
+      setClaimSubmitted(true);
+      void queryClient.invalidateQueries({ queryKey: ["claims", "my"] });
       setShowClaim(false);
-      Alert.alert("완료", "회수 요청이 접수되었습니다.", [
-        { text: "확인", onPress: () => router.back() },
-      ]);
+      setFeedback({
+        tone: "success",
+        title: "회수 요청 완료",
+        message: "요청이 접수되었습니다. 내 회수 요청에서 진행 상태를 확인할 수 있습니다.",
+        actionLabel: "내 요청 보기",
+        onAction: () => router.push("/user/claims"),
+      });
     },
-    onError: () => Alert.alert("오류", "회수 요청에 실패했습니다."),
+    onError: (error) => setFeedback({ tone: "error", title: "회수 요청 실패", message: getClaimErrorMessage(error) }),
   });
 
   const handleSubmit = () => {
+    if (claim.isPending) return;
+    if (hasPendingClaim) {
+      setShowClaim(false);
+      setFeedback({ tone: "warning", title: "이미 신청한 물품", message: "내 회수 요청 내역에서 진행 상태를 확인하세요." });
+      return;
+    }
     claim.mutate();
   };
 
   if (isLoading || !item) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.appBg }}>
-        <Stack.Screen options={{ title: "분실물 상세" }} />
         <ActivityIndicator color={colors.primary} />
       </View>
     );
   }
 
   const imageUrl = normalizeImageUrl(item.image);
-  const canClaim = user?.role === "USER" && item.status === "LOST";
+  const itemFromSearch = statusFallback.data?.content.find((candidate) => candidate.id === itemId);
+  const displayStatus = item.status ?? itemFromSearch?.status;
+  const isClaimableStatus = displayStatus === "LOST" || displayStatus === "TO_BE_DISCARDED";
+  const pendingClaim = myClaims.data?.claims.find((claimItem) => claimItem.itemId === itemId && claimItem.status === "PENDING");
+  const hasPendingClaim = claimSubmitted || !!pendingClaim;
+  const showClaimFooter = user?.role === "USER" && isClaimableStatus;
+  const canClaim = showClaimFooter && !hasPendingClaim && !myClaims.isLoading;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.appBg }}>
-      <Stack.Screen options={{ title: item.name }} />
-
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: canClaim ? 100 : 24 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: showClaimFooter ? 100 : 24 }}>
         {/* 히어로 이미지 */}
         {imageUrl ? (
           <Image source={{ uri: imageUrl }} style={{ width: "100%", height: 260 }} resizeMode="cover" />
@@ -87,6 +120,7 @@ export default function ItemDetailScreen() {
         )}
 
         <View style={{ padding: 20, gap: 16 }}>
+          <FeedbackBanner feedback={feedback} onDismiss={() => setFeedback(null)} />
           {/* 제목 + 카테고리 */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Text style={{ ...typography.h1, color: colors.textMain, flex: 1 }}>{item.name}</Text>
@@ -101,6 +135,8 @@ export default function ItemDetailScreen() {
           <View
             style={{ backgroundColor: colors.cardBg, borderRadius: radius.card, padding: 16, gap: 12, ...shadow }}
           >
+            <DetailRow label="상태" value={statusLabel(displayStatus)} />
+            <DetailRow label="종류" value={item.category} />
             <DetailRow label="습득일" value={item.foundAt} />
             {(item.foundPlace || item.foundPlaceDetail) && (
               <DetailRow
@@ -109,12 +145,16 @@ export default function ItemDetailScreen() {
               />
             )}
             {item.reporterName && (
-              <DetailRow label="신고자" value={item.reporterName} />
+              <DetailRow
+                label="신고자"
+                value={`${item.reporterName}${item.reporterStudentCode ? ` (${item.reporterStudentCode})` : ""}`}
+              />
             )}
-            <DetailRow label="상태" value={statusLabel(item.status)} />
+            {item.disposalDate ? <DetailRow label="폐기 예정" value={item.disposalDate} /> : null}
+            {item.approvalStatus ? <DetailRow label="승인 상태" value={approvalLabel(item.approvalStatus)} /> : null}
           </View>
 
-          {item.status === "TO_BE_DISCARDED" && (
+          {displayStatus === "TO_BE_DISCARDED" && (
             <View
               style={{
                 flexDirection: "row",
@@ -128,15 +168,33 @@ export default function ItemDetailScreen() {
               }}
             >
               <Text style={{ fontSize: 13, color: "#9A3412", flex: 1, lineHeight: 18 }}>
-                ⚠️ 이 물품은 곧 폐기될 예정입니다. 본인 물건이라면 빠르게 신청하세요.
+                이 물품은 곧 폐기될 예정입니다. 본인 물건이라면 빠르게 신청하세요.
               </Text>
             </View>
           )}
         </View>
       </ScrollView>
+      <Pressable
+        onPress={() => (router.canGoBack() ? router.back() : router.replace("/"))}
+        hitSlop={8}
+        style={{
+          position: "absolute",
+          top: insets.top + 10,
+          left: 14,
+          width: 42,
+          height: 42,
+          borderRadius: 14,
+          backgroundColor: "rgba(255,255,255,0.92)",
+          alignItems: "center",
+          justifyContent: "center",
+          ...shadow,
+        }}
+      >
+        <Ionicons name="chevron-back" color={colors.textMain} size={25} />
+      </Pressable>
 
       {/* 스티키 하단 버튼 */}
-      {canClaim && (
+      {showClaimFooter && (
         <View
           style={{
             position: "absolute",
@@ -149,7 +207,11 @@ export default function ItemDetailScreen() {
             borderTopColor: colors.border,
           }}
         >
-          <AppButton title="내 물건이에요" onPress={() => setShowClaim(true)} />
+          <AppButton
+            title={hasPendingClaim ? "회수 요청 대기 중" : myClaims.isLoading ? "신청 여부 확인 중" : "내 물건이에요"}
+            onPress={() => setShowClaim(true)}
+            disabled={!canClaim}
+          />
         </View>
       )}
 
@@ -183,14 +245,7 @@ export default function ItemDetailScreen() {
               </Text>
             </View>
             <View style={{ alignItems: "center" }}>
-              <DateTimePicker
-                value={visitDate}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                minimumDate={new Date()}
-                onChange={(_, date) => { if (date) setVisitDate(date); }}
-                locale="ko-KR"
-              />
+              <VisitDatePicker value={visitDate} onChange={setVisitDate} />
             </View>
             <Text style={{ fontSize: 13, color: colors.textSub, textAlign: "center" }}>
               방문 예정일: {visitDateString}
@@ -200,7 +255,7 @@ export default function ItemDetailScreen() {
                 <AppButton title="취소" variant="secondary" onPress={() => setShowClaim(false)} />
               </View>
               <View style={{ flex: 1 }}>
-                <AppButton title="신청하기" onPress={handleSubmit} loading={claim.isPending} />
+                <AppButton title="신청하기" onPress={handleSubmit} loading={claim.isPending} disabled={hasPendingClaim} />
               </View>
             </View>
           </Pressable>
@@ -219,12 +274,71 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function statusLabel(status: string) {
-  const map: Record<string, string> = {
-    LOST: "보관 중",
-    GIVEN: "수령 완료",
+function statusLabel(status?: ItemStatus) {
+  const map: Record<ItemStatus, string> = {
+    LOST: "보관중",
+    GIVEN: "지급 완료",
     TO_BE_DISCARDED: "폐기 예정",
-    DISCARDED: "폐기됨",
+    DISCARDED: "폐기 완료",
+  };
+  return status ? map[status] : "확인 중";
+}
+
+function approvalLabel(status: string) {
+  const map: Record<string, string> = {
+    PENDING: "대기",
+    APPROVED: "승인",
+    REJECTED: "반려",
   };
   return map[status] ?? status;
+}
+
+function VisitDatePicker({ value, onChange }: { value: Date; onChange: (date: Date) => void }) {
+  const valueString = value.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  const todayString = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+
+  if (Platform.OS === "web") {
+    return createElement("input", {
+      type: "date",
+      value: valueString,
+      min: todayString,
+      onChange: (event: { target: { value: string } }) => {
+        if (event.target.value) {
+          onChange(new Date(`${event.target.value}T00:00:00+09:00`));
+        }
+      },
+      style: {
+        width: "100%",
+        minHeight: 48,
+        borderRadius: 12,
+        border: `1px solid ${colors.border}`,
+        backgroundColor: colors.appBg,
+        color: colors.textMain,
+        fontSize: 16,
+        fontWeight: 700,
+        padding: "0 14px",
+      } satisfies CSSProperties,
+    });
+  }
+
+  return (
+    <DateTimePicker
+      value={value}
+      mode="date"
+      display={Platform.OS === "ios" ? "spinner" : "default"}
+      minimumDate={new Date()}
+      onChange={(_, date) => {
+        if (date) onChange(date);
+      }}
+      locale="ko-KR"
+    />
+  );
+}
+
+function getClaimErrorMessage(error: unknown) {
+  if (typeof error === "object" && error !== null && "response" in error) {
+    const data = (error as { response?: { data?: { message?: string; error?: string } } }).response?.data;
+    return data?.message ?? data?.error ?? "회수 요청에 실패했습니다.";
+  }
+  return "회수 요청에 실패했습니다.";
 }

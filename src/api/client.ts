@@ -7,6 +7,7 @@ import { useAuthStore } from "@/stores/auth-store";
 export const apiClient = axios.create({
   baseURL: apiBaseUrl,
   timeout: 12000,
+  paramsSerializer: { serialize: serializeParams },
 });
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -60,4 +61,23 @@ async function refreshAccessToken() {
     await clearSession();
     return null;
   }
+}
+
+function serializeParams(params: Record<string, unknown>) {
+  const searchParams = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        if (entry !== undefined && entry !== null && entry !== "") {
+          searchParams.append(key, String(entry));
+        }
+      });
+      return;
+    }
+    searchParams.append(key, String(value));
+  });
+
+  return searchParams.toString();
 }

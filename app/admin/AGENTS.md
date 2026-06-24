@@ -1,7 +1,7 @@
 <!-- Parent: ../AGENTS.md -->
 <!-- Generated: 2026-06-11 | Updated: 2026-06-11 -->
 
-# app/(admin)/
+# app/admin/
 
 ## Purpose
 ADMIN 역할 탭 그룹. 분실물 CRUD, 회수 요청 승인/반려, 폐기 관리 담당.

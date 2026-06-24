@@ -8,11 +8,12 @@ const authClient = axios.create({
   timeout: 12000,
 });
 
-export async function requestMobileBsmAuthorize(redirectUri = authCallbackUrl) {
-  const response = await authClient.get<MobileAuthorizeResponse>("/auth/mobile/bsm/authorize", {
-    params: { redirectUri },
-  });
-  return response.data;
+export function getMobileBsmStartUrl(redirectUri = authCallbackUrl) {
+  return `${apiBaseUrl}/auth/mobile/bsm/start?redirectUri=${encodeURIComponent(redirectUri)}`;
+}
+
+export async function requestMobileBsmAuthorize(redirectUri = authCallbackUrl): Promise<MobileAuthorizeResponse> {
+  return { url: getMobileBsmStartUrl(redirectUri) };
 }
 
 export async function exchangeOneTimeToken(oneTimeToken: string) {
@@ -39,4 +40,10 @@ export async function fetchMe(accessToken: string) {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   return response.data;
+}
+
+export async function logout(accessToken?: string | null) {
+  await authClient.post("/auth/logout", undefined, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
 }

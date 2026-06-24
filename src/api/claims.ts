@@ -1,5 +1,5 @@
 import { apiClient } from "@/api/client";
-import type { ClaimRequestsResponse, ClaimStatus, MyClaimsResponse } from "@/types/item";
+import type { ClaimRequest, ClaimRequestsResponse, ClaimStatus, MyClaimsResponse } from "@/types/item";
 
 export const claimKeys = {
   my: (page?: number) => ["claims", "my", page ?? 1] as const,
@@ -33,7 +33,7 @@ export async function cancelClaim(claimId: number) {
 
 export async function getClaimRequests(params: ClaimRequestParams) {
   const response = await apiClient.get<ClaimRequestsResponse>("/items/claims/requests", { params });
-  return response.data;
+  return normalizeClaimRequests(response.data);
 }
 
 export async function getClaimCount() {
@@ -47,4 +47,25 @@ export async function approveClaim(claimId: number) {
 
 export async function rejectClaim(claimId: number) {
   await apiClient.post(`/items/claims/${claimId}/reject`);
+}
+
+function normalizeClaimRequests(data: ClaimRequestsResponse): ClaimRequestsResponse {
+  const rawRequests = data.requests ?? data.claims ?? [];
+  const claims = rawRequests.map(normalizeClaimRequest);
+
+  return {
+    ...data,
+    claims,
+    requests: claims,
+  };
+}
+
+function normalizeClaimRequest(request: ClaimRequest): ClaimRequest {
+  const claimId = request.claimId ?? request.requestId;
+
+  return {
+    ...request,
+    claimId,
+    requestId: request.requestId ?? claimId,
+  };
 }

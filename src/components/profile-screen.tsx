@@ -1,16 +1,23 @@
-import { router } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 
+import { logout as logoutApi } from "@/api/auth";
 import { AppButton } from "@/components/app-button";
 import { InfoCard } from "@/components/info-card";
 import { Screen } from "@/components/screen";
 import { useAuthStore } from "@/stores/auth-store";
 
 export function ProfileScreen() {
-  const { user, clearSession } = useAuthStore();
+  const queryClient = useQueryClient();
+  const { user, accessToken, clearSession } = useAuthStore();
 
   const logout = async () => {
     await clearSession();
-    router.replace("/");
+    queryClient.clear();
+    if (accessToken) {
+      void logoutApi(accessToken).catch(() => {
+        // Local logout is already complete.
+      });
+    }
   };
 
   return (

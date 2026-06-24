@@ -24,7 +24,7 @@
 
 ### Key Types
 ```ts
-type Role = "ADMIN" | "TEACHER" | "USER"
+type Role = "ADMIN" | "USER"
 type ItemStatus = "LOST" | "GIVEN" | "TO_BE_DISCARDED" | "DISCARDED"
 type ItemCategory = "전자기기" | "의류" | "액세서리" | "기타"
 type ClaimStatus = "PENDING" | "APPROVED" | "REJECTED"
