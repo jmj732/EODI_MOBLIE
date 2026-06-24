@@ -41,6 +41,9 @@ yarn-error.*
 .omc/
 .claude/
 
+# generated reports
+docs/report/
+
 # generated native folders
 /ios
 /android
