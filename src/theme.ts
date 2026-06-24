@@ -1,10 +1,16 @@
 export const colors = {
   primary: "#2563EB",
+  primaryDark: "#1E3A8A",
   primaryBg: "#EFF6FF",
-  warning: "#F97316",
-  success: "#10B981",
-  danger: "#EF4444",
-  appBg: "#F9FAFB",
+  accent: "#0F766E",
+  accentBg: "#ECFDF5",
+  warning: "#D97706",
+  warningBg: "#FFFBEB",
+  success: "#059669",
+  successBg: "#ECFDF5",
+  danger: "#DC2626",
+  dangerBg: "#FEF2F2",
+  appBg: "#F6F8FB",
   cardBg: "#FFFFFF",
   border: "#E5E7EB",
   textMain: "#111827",
@@ -13,8 +19,8 @@ export const colors = {
 };
 
 export const typography = {
-  h1: { fontSize: 22, fontWeight: "700" as const, lineHeight: 30 },
-  h2: { fontSize: 18, fontWeight: "600" as const, lineHeight: 25 },
+  h1: { fontSize: 24, fontWeight: "800" as const, lineHeight: 31 },
+  h2: { fontSize: 18, fontWeight: "800" as const, lineHeight: 25 },
   body: { fontSize: 15, fontWeight: "500" as const, lineHeight: 22 },
   caption: { fontSize: 12, fontWeight: "400" as const, lineHeight: 15 },
 };
@@ -28,7 +34,7 @@ export const shadow = {
 };
 
 export const radius = {
-  card: 16,
+  card: 14,
   button: 12,
   chip: 999,
 };

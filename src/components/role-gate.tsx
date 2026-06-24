@@ -1,5 +1,6 @@
-import { Redirect } from "expo-router";
+import { usePathname, useRouter } from "expo-router";
 import type { ReactNode } from "react";
+import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 
 import { useAuthStore } from "@/stores/auth-store";
@@ -11,7 +12,19 @@ type RoleGateProps = {
 };
 
 export function RoleGate({ roles, children }: RoleGateProps) {
+  const pathname = usePathname();
+  const router = useRouter();
   const { status, user } = useAuthStore();
+  const allowed = !!user && roles.includes(user.role);
+
+  useEffect(() => {
+    if (status === "loading" || allowed) return;
+
+    const nextPath = user ? routeForRole(user.role) : "/";
+    if (pathname !== nextPath) {
+      router.replace(nextPath);
+    }
+  }, [allowed, pathname, router, status, user]);
 
   if (status === "loading") {
     return (
@@ -21,18 +34,18 @@ export function RoleGate({ roles, children }: RoleGateProps) {
     );
   }
 
-  if (!user) {
-    return <Redirect href="/" />;
-  }
-
-  if (!roles.includes(user.role)) {
-    return <Redirect href={routeForRole(user.role)} />;
+  if (!allowed) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator />
+      </View>
+    );
   }
 
   return children;
 }
 
 export function routeForRole(role: Role) {
-  if (role === "ADMIN") return "/(admin)/manage";
-  return "/(user)";
+  if (role === "ADMIN") return "/admin/manage";
+  return "/user/find";
 }
