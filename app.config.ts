@@ -25,10 +25,23 @@ const config = {
   web: {
     favicon: "./assets/favicon.png",
   },
-  plugins: ["expo-router", "expo-secure-store", "expo-web-browser", "@react-native-community/datetimepicker"],
+  plugins: [
+    "expo-router",
+    "expo-secure-store",
+    "expo-web-browser",
+    "expo-font",
+    "@react-native-community/datetimepicker",
+    [
+      "expo-image-picker",
+      {
+        photosPermission: "분실물 사진을 등록하기 위해 사진 보관함 접근 권한이 필요합니다.",
+        cameraPermission: "분실물 사진을 촬영하기 위해 카메라 접근 권한이 필요합니다.",
+      },
+    ],
+  ],
   extra: {
     appEnv,
-    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8080",
+    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL ?? "https://www.jojaemin.com",
     scheme,
     eas: {
       projectId: "2ea134a9-317f-4587-9e09-9f375cb8fea6",
