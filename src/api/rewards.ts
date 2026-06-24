@@ -14,9 +14,11 @@ export const rewardKeys = {
 
 export type RewardHistoryParams = {
   userId?: number;
+  user_id?: number;
   itemId?: number;
   from?: string;
   to?: string;
+  date?: string;
   grade?: number;
   class?: number;
 };
